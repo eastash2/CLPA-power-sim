@@ -6,4 +6,4 @@ clean:
 all: sim
 
 sim: main.c
-	$(CC) $^ -o ../$@
+	$(CC) -Wall $^ -o ../$@
