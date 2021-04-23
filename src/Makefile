@@ -1,9 +1,10 @@
 CC=gcc
-
-clean:
-	rm -f ./*.o
+OBJ = main.o sim.o page.o
+HEADER=../include/sim.h ../include/page.h
+CFLAGS= -Wall -Iinclude
 
 all: sim
-
-sim: main.c
-	$(CC) -Wall $^ -o ../$@
+sim: $(OBJ) $(HEADER)
+	${CC} $(CFLAGS) $^ -o $@
+clean:
+	rm -f ./*.o
