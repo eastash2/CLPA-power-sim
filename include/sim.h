@@ -1,6 +1,5 @@
 #include "page.h"
 #include <string.h>
-#include <stdio.h>
 
 
 #define NUM_CHIPS 8
@@ -19,7 +18,7 @@ typedef struct _sim_trace {
     int rw;
     count_t tick;
 } trace_t;
-
+int verbose;
 void set_verbose(int v);
 count_t cur_tick;
 count_t clp_count;
@@ -30,6 +29,5 @@ count_t clp_length;
 count_t rt_length;
 
 trace_t parse_line(char* buf);
-void timer_increase(page_p head, long int tick);
 void page_check(page_p rt, page_p clp); 
 void access_page(page_p rt, page_p clp, trace_t tr) ;

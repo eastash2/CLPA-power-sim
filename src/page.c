@@ -1,9 +1,10 @@
 #include "../include/page.h"
-
+extern count_t cur_tick;
+extern int verbose;
 page_p get_swap_candidate(page_p clp) {
     page_p page;
     for(page = clp->next; page != clp; page = page->next)
-        if(page->timer >= CLP_LIFETIME && page->swapper == NULL)
+        if(page->expiration <= cur_tick && page->swapper == NULL)
             return page;
     
     return NULL;
@@ -16,8 +17,8 @@ page_p add_new_page(page_p head, uint64_t pn) {
     new_page->counter = 0;
     new_page->next = head;
     new_page->prev = head->prev;
-    new_page->swap_left = 0;
-    new_page->timer = 0;
+    new_page->swap_tick = 0;
+    new_page->expiration = cur_tick + RT_LIFETIME;
     new_page->swapper = NULL;
     new_page->prev->next = new_page;
     head->prev = new_page;
@@ -27,9 +28,10 @@ page_p add_new_page(page_p head, uint64_t pn) {
 
 page_p get_page(page_p head, uint64_t pn) {
     page_p page;
-    for(page = head->next; page != head; page = page->next)
+    for(page = head->next; page != head; page = page->next) {
         if(page->page_number == pn)
             return page;
+    }
     return NULL;
 }
 
@@ -51,10 +53,10 @@ void move_page(page_p page, page_p head) {
     page->prev->next = page->next;
     page->next->prev = page->prev;
 
-    page->next = head;
-    page->prev = head->prev;
+    page->next = head->next;
+    page->prev = head;
 
-    page->prev->next = page;
-    head->prev = page;
+    page->next->prev = page;
+    head->next = page;
     return;
 }

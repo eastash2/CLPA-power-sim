@@ -1,6 +1,4 @@
 #include "../include/sim.h"
-static int verbose;
-
 void set_verbose(int v) {verbose = v;}
 //depends trace formats
 //use "access_tick address R/W" format
@@ -25,17 +23,6 @@ trace_t parse_line(char* buf) {
     return tr;
 }
 
-void timer_increase(page_p head, long int tick) {
-    page_p page;
-    for(page = head->next; page != head; page = page->next) {
-        page->timer += tick;
-        if(page->swapper != NULL) {
-            page->swap_left -= page->swap_left < tick ? page->swap_left : tick;            
-        }
-    }
-    return;
-}
-
 
 void page_check(page_p rt, page_p clp) {
     page_p page;
@@ -45,50 +32,43 @@ void page_check(page_p rt, page_p clp) {
     page = rt->next; 
     while(page != rt) {
         next = page->next;
-        if(page->timer >= RT_LIFETIME && page->swapper == NULL) {
+        if(page->expiration <= cur_tick && page->swapper == NULL) {
             delete_page(page);
             rt_length--;
         } else if(page->counter >= hot_threshold && page->swapper == NULL) {
             swaps_count++;
             if((swap = get_swap_candidate(clp)) != NULL) {
-                if(verbose) {
+                if(verbose > 0) {
                     printf("%lu: page %lx will be swapped to CLP!\n", 
-                    cur_tick, page->page_number);
+                    cur_tick, page->page_number);;
                     printf("%lu: page %lx will be swapped to RT!\n", 
                     cur_tick, swap->page_number);
                 }
-                swap->swap_left = SWAP_LATENCY;
+                swap->swap_tick = cur_tick + SWAP_LATENCY;
                 swap->swapper = page;
-                page->swap_left = SWAP_LATENCY;
+                page->swap_tick = cur_tick + SWAP_LATENCY;
                 page->swapper = swap;
             } else {
-                if(verbose)
+                if(verbose > 0)
                     printf("%lu: page %lx will be moved to CLP!\n", 
                         cur_tick, page->page_number);
-                page->swap_left = SWAP_LATENCY;
+                page->swap_tick = cur_tick + SWAP_LATENCY;
                 page->swapper = clp;
             }
         }
-        if(page->swapper != NULL && page->swap_left == 0) {
-            if(verbose)
+        if(page->swapper != NULL && page->swap_tick <= cur_tick) {
+            if(verbose > 0)
                 printf("%lu: page %lx swapped to CLP!\n", 
                 cur_tick, page->page_number);
 
-            page->timer = 0;
+            page->expiration = cur_tick + CLP_LIFETIME;
             page->counter = 0;
             move_page(page, clp);
+            clp_length++;
+            rt_length--;
             if(page->swapper != clp) {
-                if(verbose)
-                    printf("%lu: page %lx swapped to RT!\n", 
-                    cur_tick, page->swapper->page_number);
-                page->swapper->timer = 0;
-                page->swapper->counter = 0;
-                move_page(page->swapper, rt);
-                page->swapper->swapper = NULL;
-            }
-            else {
-                clp_length++;
-                rt_length--;
+                delete_page(page->swapper);
+                clp_length--;
             }
             page->swapper = NULL;
 
@@ -103,24 +83,32 @@ void access_page(page_p rt, page_p clp, trace_t tr) {
     page_p page;
     uint64_t pn_start, pn_end;
     uint64_t pn;
-    pn_start = tr.address >> PAGE_SIZE;
-    pn_end = (tr.address + tr.size) >> PAGE_SIZE;
+    pn_start = tr.address / PAGE_SIZE;
+    pn_end = (tr.address + tr.size) / PAGE_SIZE;
     pn_end++;
     for(pn = pn_start; pn < pn_end; pn++) {
+        if(verbose > 0)
+            printf("%lu: finding page %lx in CLP..\n", cur_tick, pn);
         page = get_page(clp, pn);
         if(page == NULL) {
+            if(verbose > 0)
+                printf("%lu: finding page %lx in RT..\n", cur_tick, pn);
             rt_count++;
             page = get_page(rt, pn);
             if(page == NULL) {
+                if(verbose > 0)
+                    printf("%lu: page %lx not found.. create in RT\n", cur_tick, pn);
                 page = add_new_page(rt, pn);
                 rt_length++;
             }
+            page->expiration = cur_tick + RT_LIFETIME;
         }
         else {
+            move_page(page, clp);
+            page->expiration = cur_tick + CLP_LIFETIME;
             clp_count++;
         }
         page->counter++;
-        page->timer = 0;
     }
 
     return;

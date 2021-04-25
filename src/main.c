@@ -2,8 +2,8 @@
 #include <sys/time.h>
 #define BUF_SIZE 128
 
-#define SIM_TICK 1
-#define PRINT_TICK 1e7
+#define SIM_TICK 1.2e6
+#define PRINT_TICK 1e6
 
 int main(int argc, char* argv[]) {
     FILE* fp;
@@ -15,14 +15,19 @@ int main(int argc, char* argv[]) {
     double clpa_dp, clpa_sp, conv_dp, conv_sp;
     count_t print_tick;
     struct timeval start, end;
+    count_t initial_tick;
 
     if(argc < 3) {
         printf("usage: sim \"hotpage threshold\" \"memory trace\" {--verbose}\n");
         return 0;
     }
     hot_threshold = atoi(argv[1]);
-    if(argc >= 4)
-        set_verbose(!strcmp("--verbose", argv[3]));
+    if(argc >= 4) {
+        if(!strcmp("--verbose", argv[3]))
+            set_verbose(1);
+        else if(!strcmp("--silent", argv[3]))
+            set_verbose(-1);
+    }
     else
         set_verbose(0);
 
@@ -32,23 +37,32 @@ int main(int argc, char* argv[]) {
     clp_pages_head = init_head();
     clp_count = 0;
     rt_count = 0;
-    cur_tick = 0;
+    cur_tick = 0, initial_tick = 0;
     print_tick = 0;
     fp = fopen(argv[2], "r");
     while(fgets(buf, BUF_SIZE, fp) != NULL) {
         tr = parse_line(buf);
         new_tick = tr.tick;
-        while(cur_tick != new_tick) {
-            sim_tick = new_tick - cur_tick;
-            timer_increase(rt_pages_head, sim_tick);
-            timer_increase(clp_pages_head, sim_tick);
-            page_check(rt_pages_head, clp_pages_head);            
-            cur_tick += sim_tick;
+        if(initial_tick == 0)
+            initial_tick = tr.tick;
+        if(new_tick < cur_tick) {
+            printf("unsorted trace!\n");
+            return 0;
         }
+        while(1) {
+            cur_tick += SIM_TICK;
+            if(new_tick <= cur_tick)
+                break;
+            page_check(rt_pages_head, clp_pages_head);
+        }
+        cur_tick = new_tick;
+        if(verbose > 0)
+            printf("%lu: try access page %lx..\n", cur_tick, tr.address / PAGE_SIZE);
         access_page(rt_pages_head, clp_pages_head, tr);
         page_check(rt_pages_head, clp_pages_head);
-        if(print_tick * PRINT_TICK < cur_tick) {
-            printf("rt hit: %lu, clp hit: %lu, rt length: %lu, clp length: %lu\t\t\t\t\r", rt_count, clp_count, rt_length, clp_length);
+        if(print_tick * PRINT_TICK < cur_tick && verbose > -1) {
+            printf("simulated tick: %lu, rt hit: %lu, clp hit: %lu, rt length: %lu, clp length: %lu       \r",
+                    cur_tick - initial_tick, rt_count, clp_count, rt_length, clp_length);
             print_tick = cur_tick / PRINT_TICK + 1;
         }
     }
@@ -60,7 +74,7 @@ int main(int argc, char* argv[]) {
               rt_count * RT_NJ_PER_ACCESS + 
               swaps_count * ((CLP_NJ_PER_ACCESS + RT_NJ_PER_ACCESS) * 8);
     conv_nJ = (clp_count + rt_count) * RT_NJ_PER_ACCESS;
-    sec = (double)cur_tick / 1e12;
+    sec = (double)(cur_tick - initial_tick) / 1e12;
     printf("workload time: %lf secs\n", sec);
     printf("simulation time: %lf secs\n", 
             ((double)end.tv_sec - start.tv_sec 
